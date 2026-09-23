@@ -1,0 +1,55 @@
+name: Toggle FF Flag
+
+# Adds a "Run workflow" button in the Actions tab. Pick block/unblock (and an
+# optional message) — it rewrites ff_flag.json and commits it. No server needed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      state:
+        description: "Block or unblock the panel"
+        required: true
+        type: choice
+        options:
+          - block
+          - unblock
+        default: block
+      code:
+        description: "versionCode of the new build (optional)"
+        required: false
+        default: ""
+      message:
+        description: "Message shown to blocked users (block only)"
+        required: false
+        default: "New Free Fire update — please wait for the panel update."
+
+jobs:
+  toggle:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rewrite ff_flag.json
+        env:
+          STATE: ${{ inputs.state }}
+          CODE_IN: ${{ inputs.code }}
+          MSG_IN: ${{ inputs.message }}
+        run: |
+          if [ "$STATE" = "block" ]; then B=true; M="$MSG_IN"; else B=false; M=""; fi
+          # keep existing code/ver unless a new code was given
+          CODE="$CODE_IN"
+          if [ -z "$CODE" ]; then CODE=$(jq -r '.code' ff_flag.json); fi
+          VER=$(jq -r '.ver' ff_flag.json)
+          jq -n --argjson b "$B" --arg c "$CODE" --arg v "$VER" --arg m "$M" \
+            '{blocked:$b, code:$c, ver:$v, msg:$m}' > ff_flag.json
+          echo "New flag:"; cat ff_flag.json
+
+      - name: Commit
+        run: |
+          git config user.name "flag-bot"
+          git config user.email "flag-bot@users.noreply.github.com"
+          git add ff_flag.json
+          git commit -m "Toggle flag: ${{ inputs.state }}" || { echo "no change"; exit 0; }
+          git push
